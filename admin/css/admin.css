@@ -1,0 +1,13 @@
+/**
+ * Admin CSS for Import Luma Events
+ */
+
+/* Hide the default Custom Fields meta box for luma_events */
+#postcustom {
+	display: none !important;
+}
+
+/* Style for our custom meta boxes */
+.luma-meta-box {
+	padding: 10px;
+}
