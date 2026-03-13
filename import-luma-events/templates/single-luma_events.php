@@ -38,10 +38,23 @@ $org_name = get_post_meta( $event_id, 'organizer_name', true );
 $is_virtual = ! empty( $meeting_url ) || ! empty( $zoom_meeting_url );
 $virtual_url = $zoom_meeting_url ? $zoom_meeting_url : $meeting_url;
 
-// Format dates
-$start_date_formatted = $start_ts ? date_i18n( 'l, F j, Y', $start_ts ) : date_i18n( 'F j, Y', strtotime( $start_date ) );
-$start_time = $start_ts ? date_i18n( 'g:i A', $start_ts ) : '';
-$end_time = $end_ts ? date_i18n( 'g:i A', $end_ts ) : '';
+// Format dates - use the stored dates which are already timezone-converted
+if ( $start_date ) {
+	$start_datetime_obj = new DateTime( $start_date, wp_timezone() );
+	$start_date_formatted = $start_datetime_obj->format( 'l, F j, Y' );
+	$start_time = $start_datetime_obj->format( 'g:i A' );
+} else {
+	$start_date_formatted = $start_ts ? date_i18n( 'l, F j, Y', $start_ts ) : '';
+	$start_time = $start_ts ? date_i18n( 'g:i A', $start_ts ) : '';
+}
+
+if ( $end_date ) {
+	$end_datetime_obj = new DateTime( $end_date, wp_timezone() );
+	$end_time = $end_datetime_obj->format( 'g:i A' );
+} else {
+	$end_time = $end_ts ? date_i18n( 'g:i A', $end_ts ) : '';
+}
+
 $timezone_short = $timezone ? explode( '/', $timezone )[1] ?? '' : '';
 $timezone_short = str_replace( '_', ' ', $timezone_short );
 ?>
