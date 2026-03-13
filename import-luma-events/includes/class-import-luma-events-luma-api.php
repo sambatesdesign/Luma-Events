@@ -235,16 +235,45 @@ class Import_Luma_Events_Luma_API {
 			'created_at'      => isset( $event['created_at'] ) ? $event['created_at'] : '',
 		);
 
-		// Calculate timestamps for sorting.
+		// Calculate timestamps for sorting, respecting event timezone.
 		if ( ! empty( $normalized['start_at'] ) ) {
-			$normalized['start_ts'] = strtotime( $normalized['start_at'] );
-			// Convert to local datetime for easier querying.
-			$normalized['event_start_date'] = date( 'Y-m-d H:i:s', $normalized['start_ts'] );
+			try {
+				// Create DateTime object in the event's timezone.
+				$event_tz = ! empty( $normalized['event_timezone'] ) ? new DateTimeZone( $normalized['event_timezone'] ) : null;
+				$start_datetime = new DateTime( $normalized['start_at'], $event_tz );
+
+				// Store the timestamp (always UTC-based).
+				$normalized['start_ts'] = $start_datetime->getTimestamp();
+
+				// Convert to WordPress timezone for storage and querying.
+				$wp_tz = wp_timezone();
+				$start_datetime->setTimezone( $wp_tz );
+				$normalized['event_start_date'] = $start_datetime->format( 'Y-m-d H:i:s' );
+			} catch ( Exception $e ) {
+				// Fallback to old method if timezone conversion fails.
+				$normalized['start_ts'] = strtotime( $normalized['start_at'] );
+				$normalized['event_start_date'] = date( 'Y-m-d H:i:s', $normalized['start_ts'] );
+			}
 		}
 
 		if ( ! empty( $normalized['end_at'] ) ) {
-			$normalized['end_ts'] = strtotime( $normalized['end_at'] );
-			$normalized['event_end_date'] = date( 'Y-m-d H:i:s', $normalized['end_ts'] );
+			try {
+				// Create DateTime object in the event's timezone.
+				$event_tz = ! empty( $normalized['event_timezone'] ) ? new DateTimeZone( $normalized['event_timezone'] ) : null;
+				$end_datetime = new DateTime( $normalized['end_at'], $event_tz );
+
+				// Store the timestamp (always UTC-based).
+				$normalized['end_ts'] = $end_datetime->getTimestamp();
+
+				// Convert to WordPress timezone for storage and querying.
+				$wp_tz = wp_timezone();
+				$end_datetime->setTimezone( $wp_tz );
+				$normalized['event_end_date'] = $end_datetime->format( 'Y-m-d H:i:s' );
+			} catch ( Exception $e ) {
+				// Fallback to old method if timezone conversion fails.
+				$normalized['end_ts'] = strtotime( $normalized['end_at'] );
+				$normalized['event_end_date'] = date( 'Y-m-d H:i:s', $normalized['end_ts'] );
+			}
 		}
 
 		return $normalized;
