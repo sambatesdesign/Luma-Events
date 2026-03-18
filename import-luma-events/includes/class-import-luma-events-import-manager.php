@@ -147,6 +147,12 @@ class Import_Luma_Events_Import_Manager {
 		// Use description_md (markdown) if available, otherwise plain description.
 		$content = ! empty( $event_data['description_md'] ) ? $event_data['description_md'] : $event_data['description'];
 
+		// Convert markdown to HTML.
+		$content = $this->convert_markdown_to_html( $content );
+
+		// Sanitize content to ensure proper HTML structure.
+		$content = wp_kses_post( $content );
+
 		$post_data = array(
 			'post_title'   => $event_data['name'],
 			'post_content' => $content,
@@ -159,6 +165,11 @@ class Import_Luma_Events_Import_Manager {
 		if ( is_wp_error( $post_id ) ) {
 			return $post_id;
 		}
+
+		// Clear all caches for this post.
+		clean_post_cache( $post_id );
+		wp_cache_delete( $post_id, 'posts' );
+		wp_cache_delete( $post_id, 'post_meta' );
 
 		// Save all event meta.
 		$this->save_event_meta( $post_id, $event_data );
@@ -192,6 +203,12 @@ class Import_Luma_Events_Import_Manager {
 		// Use description_md (markdown) if available, otherwise plain description.
 		$content = ! empty( $event_data['description_md'] ) ? $event_data['description_md'] : $event_data['description'];
 
+		// Convert markdown to HTML.
+		$content = $this->convert_markdown_to_html( $content );
+
+		// Sanitize content to ensure proper HTML structure.
+		$content = wp_kses_post( $content );
+
 		$post_data = array(
 			'ID'           => $post_id,
 			'post_title'   => $event_data['name'],
@@ -199,6 +216,11 @@ class Import_Luma_Events_Import_Manager {
 		);
 
 		wp_update_post( $post_data );
+
+		// Clear all caches for this post.
+		clean_post_cache( $post_id );
+		wp_cache_delete( $post_id, 'posts' );
+		wp_cache_delete( $post_id, 'post_meta' );
 
 		// Update all event meta.
 		$this->save_event_meta( $post_id, $event_data );
@@ -399,5 +421,91 @@ class Import_Luma_Events_Import_Manager {
 		}
 
 		update_option( 'ile_import_history', $history );
+	}
+
+	/**
+	 * Convert markdown to HTML.
+	 *
+	 * Handles common markdown patterns used in Luma event descriptions.
+	 *
+	 * @param string $markdown The markdown text.
+	 * @return string HTML output.
+	 */
+	private function convert_markdown_to_html( $markdown ) {
+		if ( empty( $markdown ) ) {
+			return '';
+		}
+
+		$html = $markdown;
+
+		// Normalize line endings.
+		$html = str_replace( "\r\n", "\n", $html );
+		$html = str_replace( "\r", "\n", $html );
+
+		// Convert links: [text](url) to <a href="url">text</a>
+		// Use a callback to properly handle URLs with special characters.
+		$html = preg_replace_callback(
+			'/\[([^\]]+)\]\(([^)]+)\)/',
+			function( $matches ) {
+				$text = $matches[1];
+				$url = trim( $matches[2] );
+				// Only convert if it looks like a valid URL.
+				if ( preg_match( '/^https?:\/\//', $url ) ) {
+					return '<a href="' . esc_url( $url ) . '" target="_blank" rel="noopener noreferrer">' . esc_html( $text ) . '</a>';
+				}
+				// Return original if not a valid URL.
+				return $matches[0];
+			},
+			$html
+		);
+
+		// Convert bold: **text** or __text__ to <strong>text</strong>
+		// Use non-greedy matching and ensure we match pairs correctly.
+		$html = preg_replace( '/\*\*([^*]+)\*\*/', '<strong>$1</strong>', $html );
+		$html = preg_replace( '/__([^_]+)__/', '<strong>$1</strong>', $html );
+
+		// Convert italic with asterisks: *text* to <em>text</em>
+		// Must have space or start of string before, and space or end of string/punctuation after.
+		// Only match if not adjacent to other asterisks.
+		$html = preg_replace( '/(?<!\*)\*([^*\n]+)\*(?!\*)/', '<em>$1</em>', $html );
+
+		// Convert headers: # Header to <h1>Header</h1>, ## to <h2>, etc.
+		$html = preg_replace( '/^#{6}\s*(.+)$/m', '<h6>$1</h6>', $html );
+		$html = preg_replace( '/^#{5}\s*(.+)$/m', '<h5>$1</h5>', $html );
+		$html = preg_replace( '/^#{4}\s*(.+)$/m', '<h4>$1</h4>', $html );
+		$html = preg_replace( '/^#{3}\s*(.+)$/m', '<h3>$1</h3>', $html );
+		$html = preg_replace( '/^#{2}\s*(.+)$/m', '<h2>$1</h2>', $html );
+		$html = preg_replace( '/^#{1}\s*(.+)$/m', '<h1>$1</h1>', $html );
+
+		// Convert unordered lists: - item or * item (at start of line only).
+		// Be careful not to match emphasis asterisks.
+		$html = preg_replace( '/^-\s+(.+)$/m', '<li>$1</li>', $html );
+
+		// Wrap consecutive <li> tags in <ul>.
+		$html = preg_replace( '/((?:<li>.*?<\/li>\s*)+)/s', '<ul>$1</ul>', $html );
+
+		// Split into paragraphs by double newlines.
+		$paragraphs = preg_split( '/\n\s*\n/', $html );
+		$processed = array();
+
+		foreach ( $paragraphs as $para ) {
+			$para = trim( $para );
+			if ( empty( $para ) ) {
+				continue;
+			}
+
+			// Don't wrap if already a block element.
+			if ( preg_match( '/^<(h[1-6]|ul|ol|li|div|blockquote|p)/', $para ) ) {
+				$processed[] = $para;
+			} else {
+				// Convert single newlines to <br> within paragraphs.
+				$para = str_replace( "\n", '<br>', $para );
+				$processed[] = '<p>' . $para . '</p>';
+			}
+		}
+
+		$html = implode( "\n", $processed );
+
+		return $html;
 	}
 }

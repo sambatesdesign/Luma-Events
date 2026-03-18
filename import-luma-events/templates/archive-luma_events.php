@@ -32,9 +32,9 @@ get_header(); ?>
 				$zoom_meeting_url = get_post_meta( $event_id, 'zoom_meeting_url', true );
 				$is_virtual = ! empty( $meeting_url ) || ! empty( $zoom_meeting_url );
 
-				// Format date - use the stored date which is already timezone-converted
+				// Format date - dates are stored in the event's local timezone
 				if ( $start_date ) {
-					$start_datetime_obj = new DateTime( $start_date, wp_timezone() );
+					$start_datetime_obj = new DateTime( $start_date );
 					$day = $start_datetime_obj->format( 'd' );
 					$month = $start_datetime_obj->format( 'M' );
 					$year = $start_datetime_obj->format( 'Y' );

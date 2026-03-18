@@ -38,9 +38,9 @@ $org_name = get_post_meta( $event_id, 'organizer_name', true );
 $is_virtual = ! empty( $meeting_url ) || ! empty( $zoom_meeting_url );
 $virtual_url = $zoom_meeting_url ? $zoom_meeting_url : $meeting_url;
 
-// Format dates - use the stored dates which are already timezone-converted
+// Format dates - dates are stored in the event's local timezone
 if ( $start_date ) {
-	$start_datetime_obj = new DateTime( $start_date, wp_timezone() );
+	$start_datetime_obj = new DateTime( $start_date );
 	$start_date_formatted = $start_datetime_obj->format( 'l, F j, Y' );
 	$start_time = $start_datetime_obj->format( 'g:i A' );
 } else {
@@ -49,7 +49,7 @@ if ( $start_date ) {
 }
 
 if ( $end_date ) {
-	$end_datetime_obj = new DateTime( $end_date, wp_timezone() );
+	$end_datetime_obj = new DateTime( $end_date );
 	$end_time = $end_datetime_obj->format( 'g:i A' );
 } else {
 	$end_time = $end_ts ? date_i18n( 'g:i A', $end_ts ) : '';

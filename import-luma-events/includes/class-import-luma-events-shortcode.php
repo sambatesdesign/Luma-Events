@@ -147,7 +147,7 @@ class Import_Luma_Events_Shortcode {
 					<div class="event-date">
 						<strong><?php esc_html_e( 'Date:', 'import-luma-events' ); ?></strong>
 						<?php
-						$start_datetime_obj = new DateTime( $start_date, wp_timezone() );
+						$start_datetime_obj = new DateTime( $start_date );
 						echo esc_html( $start_datetime_obj->format( 'F j, Y @ g:i a' ) );
 						?>
 					</div>

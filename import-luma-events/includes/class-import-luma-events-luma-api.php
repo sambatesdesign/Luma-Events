@@ -47,44 +47,58 @@ class Import_Luma_Events_Luma_API {
 			return new WP_Error( 'no_api_key', __( 'Luma API key is required. Please configure it in settings.', 'import-luma-events' ) );
 		}
 
-		$url = $this->base_url . '/v1/calendar/list-events?calendar_api_id=' . $calendar_id;
+		$all_entries = array();
+		$cursor      = null;
 
-		$response = wp_remote_get(
-			$url,
-			array(
-				'headers' => array(
-					'x-luma-api-key' => $this->api_key,
-					'Content-Type'   => 'application/json',
-				),
-				'timeout' => 30,
-			)
-		);
+		do {
+			$url = $this->base_url . '/v1/calendar/list-events?calendar_api_id=' . $calendar_id;
+			if ( $cursor ) {
+				$url .= '&pagination_cursor=' . rawurlencode( $cursor );
+			}
 
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		$response_code = wp_remote_retrieve_response_code( $response );
-		$body          = wp_remote_retrieve_body( $response );
-
-		if ( 200 !== $response_code ) {
-			$error_message = sprintf(
-				/* translators: %1$s: HTTP response code, %2$s: Response body */
-				__( 'Luma API request failed with status %1$s: %2$s', 'import-luma-events' ),
-				$response_code,
-				$body
+			$response = wp_remote_get(
+				$url,
+				array(
+					'headers' => array(
+						'x-luma-api-key' => $this->api_key,
+						'Content-Type'   => 'application/json',
+					),
+					'timeout' => 30,
+				)
 			);
-			return new WP_Error( 'api_error', $error_message );
-		}
 
-		$data = json_decode( $body, true );
+			if ( is_wp_error( $response ) ) {
+				return $response;
+			}
 
-		if ( json_last_error() !== JSON_ERROR_NONE ) {
-			return new WP_Error( 'json_error', __( 'Failed to parse Luma API response.', 'import-luma-events' ) );
-		}
+			$response_code = wp_remote_retrieve_response_code( $response );
+			$body          = wp_remote_retrieve_body( $response );
 
-		// Return the entries array.
-		return isset( $data['entries'] ) ? $data['entries'] : array();
+			if ( 200 !== $response_code ) {
+				$error_message = sprintf(
+					/* translators: %1$s: HTTP response code, %2$s: Response body */
+					__( 'Luma API request failed with status %1$s: %2$s', 'import-luma-events' ),
+					$response_code,
+					$body
+				);
+				return new WP_Error( 'api_error', $error_message );
+			}
+
+			$data = json_decode( $body, true );
+
+			if ( json_last_error() !== JSON_ERROR_NONE ) {
+				return new WP_Error( 'json_error', __( 'Failed to parse Luma API response.', 'import-luma-events' ) );
+			}
+
+			if ( ! empty( $data['entries'] ) ) {
+				$all_entries = array_merge( $all_entries, $data['entries'] );
+			}
+
+			$cursor = isset( $data['next_cursor'] ) ? $data['next_cursor'] : null;
+
+		} while ( ! empty( $data['has_more'] ) && $cursor );
+
+		return $all_entries;
 	}
 
 	/**
@@ -235,19 +249,22 @@ class Import_Luma_Events_Luma_API {
 			'created_at'      => isset( $event['created_at'] ) ? $event['created_at'] : '',
 		);
 
-		// Calculate timestamps for sorting, respecting event timezone.
+		// Calculate timestamps and convert to event's local timezone.
+		// Luma API returns dates in UTC (with "Z" suffix), and provides the event's
+		// timezone separately for display purposes.
 		if ( ! empty( $normalized['start_at'] ) ) {
 			try {
-				// Create DateTime object in the event's timezone.
-				$event_tz = ! empty( $normalized['event_timezone'] ) ? new DateTimeZone( $normalized['event_timezone'] ) : null;
-				$start_datetime = new DateTime( $normalized['start_at'], $event_tz );
+				// Parse the UTC datetime from Luma (the "Z" suffix tells PHP it's UTC).
+				$start_datetime = new DateTime( $normalized['start_at'] );
 
-				// Store the timestamp (always UTC-based).
+				// Store the UTC timestamp for sorting/comparisons.
 				$normalized['start_ts'] = $start_datetime->getTimestamp();
 
-				// Convert to WordPress timezone for storage and querying.
-				$wp_tz = wp_timezone();
-				$start_datetime->setTimezone( $wp_tz );
+				// Convert to the event's timezone for display.
+				if ( ! empty( $normalized['event_timezone'] ) ) {
+					$event_tz = new DateTimeZone( $normalized['event_timezone'] );
+					$start_datetime->setTimezone( $event_tz );
+				}
 				$normalized['event_start_date'] = $start_datetime->format( 'Y-m-d H:i:s' );
 			} catch ( Exception $e ) {
 				// Fallback to old method if timezone conversion fails.
@@ -258,16 +275,17 @@ class Import_Luma_Events_Luma_API {
 
 		if ( ! empty( $normalized['end_at'] ) ) {
 			try {
-				// Create DateTime object in the event's timezone.
-				$event_tz = ! empty( $normalized['event_timezone'] ) ? new DateTimeZone( $normalized['event_timezone'] ) : null;
-				$end_datetime = new DateTime( $normalized['end_at'], $event_tz );
+				// Parse the UTC datetime from Luma (the "Z" suffix tells PHP it's UTC).
+				$end_datetime = new DateTime( $normalized['end_at'] );
 
-				// Store the timestamp (always UTC-based).
+				// Store the UTC timestamp for sorting/comparisons.
 				$normalized['end_ts'] = $end_datetime->getTimestamp();
 
-				// Convert to WordPress timezone for storage and querying.
-				$wp_tz = wp_timezone();
-				$end_datetime->setTimezone( $wp_tz );
+				// Convert to the event's timezone for display.
+				if ( ! empty( $normalized['event_timezone'] ) ) {
+					$event_tz = new DateTimeZone( $normalized['event_timezone'] );
+					$end_datetime->setTimezone( $event_tz );
+				}
 				$normalized['event_end_date'] = $end_datetime->format( 'Y-m-d H:i:s' );
 			} catch ( Exception $e ) {
 				// Fallback to old method if timezone conversion fails.
