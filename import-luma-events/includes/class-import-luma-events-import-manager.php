@@ -56,11 +56,14 @@ class Import_Luma_Events_Import_Manager {
 		}
 
 		$results = array(
-			'created' => 0,
-			'updated' => 0,
-			'skipped' => 0,
-			'errors'  => array(),
+			'created'   => 0,
+			'updated'   => 0,
+			'skipped'   => 0,
+			'cancelled' => 0,
+			'errors'    => array(),
 		);
+
+		$seen_event_ids = array();
 
 		foreach ( $events as $luma_event ) {
 			$result = $this->import_event( $luma_event, $options );
@@ -69,6 +72,10 @@ class Import_Luma_Events_Import_Manager {
 				$results['errors'][] = $result->get_error_message();
 				$results['skipped']++;
 			} else {
+				if ( ! empty( $result['luma_event_id'] ) ) {
+					$seen_event_ids[] = $result['luma_event_id'];
+				}
+
 				if ( 'created' === $result['status'] ) {
 					$results['created']++;
 				} elseif ( 'updated' === $result['status'] ) {
@@ -79,10 +86,66 @@ class Import_Luma_Events_Import_Manager {
 			}
 		}
 
+		// Luma has no cancellation field - a cancelled event is simply removed
+		// from the calendar entirely. Unpublish any previously-imported events
+		// that are no longer present in this fetch. Skip this if the fetch came
+		// back empty, since that's more likely a transient API issue than every
+		// event having been cancelled at once.
+		if ( ! empty( $events ) ) {
+			$results['cancelled'] = $this->unpublish_missing_events( $seen_event_ids );
+		}
+
 		// Save import history.
 		$this->save_import_history( $calendar_id, $results );
 
 		return array_merge( array( 'success' => true ), $results );
+	}
+
+	/**
+	 * Unpublish previously-imported events that no longer appear on Luma.
+	 *
+	 * Luma does not expose a cancellation status via its API - a cancelled
+	 * event's page is deleted outright, so it simply stops appearing in the
+	 * calendar feed. This moves any such local posts to draft so they stop
+	 * rendering on the site, without permanently deleting them.
+	 *
+	 * @param array $seen_event_ids Luma event IDs returned by the current sync.
+	 * @return int Number of events unpublished.
+	 */
+	private function unpublish_missing_events( $seen_event_ids ) {
+		$existing_ids = get_posts( array(
+			'post_type'      => 'luma_events',
+			'posts_per_page' => -1,
+			'post_status'    => array( 'publish', 'future', 'pending' ),
+			'fields'         => 'ids',
+			'meta_query'     => array(
+				array(
+					'key'   => 'luma_origin',
+					'value' => 'luma',
+				),
+			),
+		) );
+
+		$cancelled_count = 0;
+
+		foreach ( $existing_ids as $post_id ) {
+			$luma_event_id = get_post_meta( $post_id, 'luma_event_id', true );
+
+			if ( empty( $luma_event_id ) || in_array( $luma_event_id, $seen_event_ids, true ) ) {
+				continue;
+			}
+
+			wp_update_post( array(
+				'ID'          => $post_id,
+				'post_status' => 'draft',
+			) );
+
+			update_post_meta( $post_id, 'luma_event_cancelled', current_time( 'mysql' ) );
+
+			$cancelled_count++;
+		}
+
+		return $cancelled_count;
 	}
 
 	/**
@@ -100,6 +163,17 @@ class Import_Luma_Events_Import_Manager {
 			return new WP_Error( 'missing_event_id', __( 'Event is missing Luma event ID.', 'import-luma-events' ) );
 		}
 
+		// The calendar list endpoint does not return description/description_md -
+		// those are only available from the single-event endpoint. Fetch full
+		// details so the event content isn't imported blank.
+		if ( empty( $event_data['description'] ) && empty( $event_data['description_md'] ) ) {
+			$full_event = $this->luma_api->get_event( $event_data['luma_event_id'] );
+
+			if ( ! is_wp_error( $full_event ) ) {
+				$event_data = $this->luma_api->normalize_event_data( $full_event );
+			}
+		}
+
 		// Check if event already exists.
 		$existing_post = $this->find_event_by_luma_id( $event_data['luma_event_id'] );
 
@@ -107,18 +181,20 @@ class Import_Luma_Events_Import_Manager {
 			// Event exists.
 			if ( empty( $options['update_existing'] ) ) {
 				return array(
-					'status'  => 'skipped',
-					'post_id' => $existing_post->ID,
-					'message' => __( 'Event already exists and update is disabled.', 'import-luma-events' ),
+					'status'        => 'skipped',
+					'post_id'       => $existing_post->ID,
+					'luma_event_id' => $event_data['luma_event_id'],
+					'message'       => __( 'Event already exists and update is disabled.', 'import-luma-events' ),
 				);
 			}
 
 			// Update existing event.
 			$post_id = $this->update_event_post( $existing_post->ID, $event_data, $options );
 			return array(
-				'status'  => 'updated',
-				'post_id' => $post_id,
-				'message' => __( 'Event updated successfully.', 'import-luma-events' ),
+				'status'        => 'updated',
+				'post_id'       => $post_id,
+				'luma_event_id' => $event_data['luma_event_id'],
+				'message'       => __( 'Event updated successfully.', 'import-luma-events' ),
 			);
 		}
 
@@ -130,9 +206,10 @@ class Import_Luma_Events_Import_Manager {
 		}
 
 		return array(
-			'status'  => 'created',
-			'post_id' => $post_id,
-			'message' => __( 'Event created successfully.', 'import-luma-events' ),
+			'status'        => 'created',
+			'post_id'       => $post_id,
+			'luma_event_id' => $event_data['luma_event_id'],
+			'message'       => __( 'Event created successfully.', 'import-luma-events' ),
 		);
 	}
 

@@ -15,9 +15,10 @@ $last_sync   = get_option( 'ile_last_sync', array() );
 
 // Display success/error messages.
 if ( isset( $_GET['imported'] ) && 'success' === $_GET['imported'] ) {
-	$created = isset( $_GET['created'] ) ? intval( $_GET['created'] ) : 0;
-	$updated = isset( $_GET['updated'] ) ? intval( $_GET['updated'] ) : 0;
-	$skipped = isset( $_GET['skipped'] ) ? intval( $_GET['skipped'] ) : 0;
+	$created   = isset( $_GET['created'] ) ? intval( $_GET['created'] ) : 0;
+	$updated   = isset( $_GET['updated'] ) ? intval( $_GET['updated'] ) : 0;
+	$skipped   = isset( $_GET['skipped'] ) ? intval( $_GET['skipped'] ) : 0;
+	$cancelled = isset( $_GET['cancelled'] ) ? intval( $_GET['cancelled'] ) : 0;
 
 	echo '<div class="notice notice-success is-dismissible"><p>';
 	printf(
@@ -27,6 +28,14 @@ if ( isset( $_GET['imported'] ) && 'success' === $_GET['imported'] ) {
 		$updated,
 		$skipped
 	);
+	if ( $cancelled > 0 ) {
+		echo ' ';
+		printf(
+			/* translators: %d: number of events unpublished because they were removed/cancelled on Luma */
+			esc_html__( '%d event(s) no longer found on Luma were moved to Draft (likely cancelled).', 'import-luma-events' ),
+			$cancelled
+		);
+	}
 	echo '</p></div>';
 }
 

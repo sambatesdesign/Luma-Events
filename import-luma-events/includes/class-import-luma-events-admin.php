@@ -343,11 +343,12 @@ class Import_Luma_Events_Admin {
 
 		if ( $result['success'] ) {
 			$redirect_args = array(
-				'page'    => 'ile-import',
-				'imported' => 'success',
-				'created' => $result['created'],
-				'updated' => $result['updated'],
-				'skipped' => $result['skipped'],
+				'page'      => 'ile-import',
+				'imported'  => 'success',
+				'created'   => $result['created'],
+				'updated'   => $result['updated'],
+				'skipped'   => $result['skipped'],
+				'cancelled' => isset( $result['cancelled'] ) ? $result['cancelled'] : 0,
 			);
 		} else {
 			$redirect_args = array(
