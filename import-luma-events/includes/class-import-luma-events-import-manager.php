@@ -541,6 +541,12 @@ class Import_Luma_Events_Import_Manager {
 		$html = preg_replace( '/\*\*([^*]+)\*\*/', '<strong>$1</strong>', $html );
 		$html = preg_replace( '/__([^_]+)__/', '<strong>$1</strong>', $html );
 
+		// Convert italic with underscores: _text_ to <em>text</em>
+		// Not adjacent to another underscore - by this point any real __bold__
+		// has already been converted above, so this only catches genuine single
+		// underscores.
+		$html = preg_replace( '/(?<!_)_([^_\n]+)_(?!_)/', '<em>$1</em>', $html );
+
 		// Convert italic with asterisks: *text* to <em>text</em>
 		// Must have space or start of string before, and space or end of string/punctuation after.
 		// Only match if not adjacent to other asterisks.
