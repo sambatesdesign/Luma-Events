@@ -519,8 +519,39 @@ class Import_Luma_Events_Import_Manager {
 		$html = str_replace( "\r\n", "\n", $html );
 		$html = str_replace( "\r", "\n", $html );
 
+		// Convert bold: **text** or __text__ to <strong>text</strong>
+		// Use non-greedy matching and ensure we match pairs correctly.
+		$html = preg_replace( '/\*\*([^*]+)\*\*/', '<strong>$1</strong>', $html );
+		$html = preg_replace( '/__([^_]+)__/', '<strong>$1</strong>', $html );
+
+		// Convert unordered lists: - item or * item (at start of line only).
+		// Runs before italic-asterisk conversion so a list marker (a single "*"
+		// followed by a space at the start of a line) is consumed as a list
+		// rather than left as a stray asterisk for the emphasis rule to trip on.
+		$html = preg_replace( '/^[-*]\s+(.+)$/m', '<li>$1</li>', $html );
+
+		// Wrap consecutive <li> tags in <ul>. Only pulls in the single newline
+		// between two list items (via the lookahead) - it must never swallow a
+		// blank line after the last item, or the closing </ul> gets dragged into
+		// the following paragraph and corrupts it.
+		$html = preg_replace( '/(?:<li>.*?<\/li>(?:\n(?=<li>))?)+/s', '<ul>$0</ul>', $html );
+
+		// Convert italic with underscores: _text_ to <em>text</em>
+		// Not adjacent to another underscore - by this point any real __bold__
+		// has already been converted above, so this only catches genuine single
+		// underscores. Excludes < and > so it can never bridge across HTML tags.
+		$html = preg_replace( '/(?<!_)_([^_\n<>]+)_(?!_)/', '<em>$1</em>', $html );
+
+		// Convert italic with asterisks: *text* to <em>text</em>
+		// Must have space or start of string before, and space or end of string/punctuation after.
+		// Only match if not adjacent to other asterisks.
+		$html = preg_replace( '/(?<!\*)\*([^*\n<>]+)\*(?!\*)/', '<em>$1</em>', $html );
+
 		// Convert links: [text](url) to <a href="url">text</a>
-		// Use a callback to properly handle URLs with special characters.
+		// Runs after bold/italic so the target="_blank" underscore this generates
+		// can never be mistaken for markdown italic syntax on a later link in the
+		// same paragraph. Use a callback to properly handle URLs with special
+		// characters.
 		$html = preg_replace_callback(
 			'/\[([^\]]+)\]\(([^)]+)\)/',
 			function( $matches ) {
@@ -536,22 +567,6 @@ class Import_Luma_Events_Import_Manager {
 			$html
 		);
 
-		// Convert bold: **text** or __text__ to <strong>text</strong>
-		// Use non-greedy matching and ensure we match pairs correctly.
-		$html = preg_replace( '/\*\*([^*]+)\*\*/', '<strong>$1</strong>', $html );
-		$html = preg_replace( '/__([^_]+)__/', '<strong>$1</strong>', $html );
-
-		// Convert italic with underscores: _text_ to <em>text</em>
-		// Not adjacent to another underscore - by this point any real __bold__
-		// has already been converted above, so this only catches genuine single
-		// underscores.
-		$html = preg_replace( '/(?<!_)_([^_\n]+)_(?!_)/', '<em>$1</em>', $html );
-
-		// Convert italic with asterisks: *text* to <em>text</em>
-		// Must have space or start of string before, and space or end of string/punctuation after.
-		// Only match if not adjacent to other asterisks.
-		$html = preg_replace( '/(?<!\*)\*([^*\n]+)\*(?!\*)/', '<em>$1</em>', $html );
-
 		// Convert headers: # Header to <h1>Header</h1>, ## to <h2>, etc.
 		$html = preg_replace( '/^#{6}\s*(.+)$/m', '<h6>$1</h6>', $html );
 		$html = preg_replace( '/^#{5}\s*(.+)$/m', '<h5>$1</h5>', $html );
@@ -559,13 +574,6 @@ class Import_Luma_Events_Import_Manager {
 		$html = preg_replace( '/^#{3}\s*(.+)$/m', '<h3>$1</h3>', $html );
 		$html = preg_replace( '/^#{2}\s*(.+)$/m', '<h2>$1</h2>', $html );
 		$html = preg_replace( '/^#{1}\s*(.+)$/m', '<h1>$1</h1>', $html );
-
-		// Convert unordered lists: - item or * item (at start of line only).
-		// Be careful not to match emphasis asterisks.
-		$html = preg_replace( '/^-\s+(.+)$/m', '<li>$1</li>', $html );
-
-		// Wrap consecutive <li> tags in <ul>.
-		$html = preg_replace( '/((?:<li>.*?<\/li>\s*)+)/s', '<ul>$1</ul>', $html );
 
 		// Split into paragraphs by double newlines.
 		$paragraphs = preg_split( '/\n\s*\n/', $html );
